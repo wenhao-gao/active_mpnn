@@ -1,2 +1,3 @@
-# Alchemy
-Alchemy QC property prediction competition
+# Active MPNN
+
+MPNN with active learning.
