@@ -1,4 +1,2 @@
-## Active Message Passing Neural Network
-
-The active learning with directed mpnn
-
+# Alchemy
+Alchemy QC property prediction competition
