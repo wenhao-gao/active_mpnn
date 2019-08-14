@@ -31,12 +31,6 @@ def train_model(
     else:
         debug = info = print
 
-    if not os.path.exists(args.log_path):
-        os.makedirs(args.log_path)
-    args.log_path = os.path.join(args.log_path, args.task)
-    if not os.path.exists(args.log_path):
-        os.makedirs(args.log_path)
-
     # set seed
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)

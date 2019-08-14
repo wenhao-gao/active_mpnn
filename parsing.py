@@ -3,6 +3,7 @@ Code handle the arguments
 """
 from argparse import ArgumentParser, Namespace
 import json
+import os
 
 
 def add_args(parser: ArgumentParser):
@@ -152,6 +153,12 @@ def parse_args() -> Namespace:
     add_args(parser)
     args = parser.parse_args()
     modify_args(args)
+
+    if not os.path.exists(args.log_path):
+        os.makedirs(args.log_path)
+    args.log_path = os.path.join(args.log_path, args.task)
+    if not os.path.exists(args.log_path):
+        os.makedirs(args.log_path)
 
     return args
 
