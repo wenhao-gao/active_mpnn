@@ -19,10 +19,23 @@ def train_model(
         args: Namespace = None,
         logger: logging.Logger = None,
         writer: SummaryWriter = None):
+    """
+    Start a active training process
+
+    :param args: arguments
+    :param logger: logger
+    :param writer: tensorboard writer
+    """
     if logger is not None:
         debug, info = logger.debug, logger.info
     else:
         debug = info = print
+
+    if not os.path.exists(args.log_path):
+        os.makedirs(args.log_path)
+    args.log_path = os.path.join(args.log_path, args.task)
+    if not os.path.exists(args.log_path):
+        os.makedirs(args.log_path)
 
     # set seed
     np.random.seed(args.seed)
