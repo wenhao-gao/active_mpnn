@@ -1,125 +1,310 @@
+import os
 import numpy as np
-import torch
+from tqdm import tqdm
 import torch.nn.functional as F
-import torch.optim as optim
 from torch.utils.data import DataLoader
+from argparse import Namespace
+import logging
+from typing import Callable, List, Union
+
+from tensorboardX import SummaryWriter
+import torch
+import torch.nn as nn
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import _LRScheduler
+from tqdm import trange
+from dataset.data import MoleculeDataset
+
+
+def compute_mse(y1, y2):
+    return np.mean(np.square(y1 - y2))
+
+
+def compute_mae(y1, y2):
+    return np.mean(np.absolute(y1 - y2))
+
+
+def compute_maxae(y1, y2):
+    return np.max(np.absolute(y1 - y2))
+
 
 class Strategy:
-    def __init__(self, X, Y, idxs_lb, net, handler, args):
-        self.X = X
-        self.Y = Y
+    """A base active learning query strategy class
+    The query function should be overwritten by specific method
+    """
+
+    def __init__(self,
+                 data: Union[MoleculeDataset, List[MoleculeDataset]],
+                 idxs_lb: List,
+                 net: nn.Module,
+                 optimizer: Optimizer,
+                 lr_schedule: _LRScheduler,
+                 args: Namespace,
+                 logger: logging.Logger = None,
+                 writer: SummaryWriter = None):
+        """
+        Initialize a strategy, with dataset and network.
+
+        :param data: training data
+        :param idxs_lb: labeled index
+        :param net: network
+        :param optimizer: optimizer
+        :param lr_schedule: learning rate decay scheduler
+        :param args: argument
+        :param logger: result logger
+        :param writer: tensorboard writer
+        """
+        self.data = data
         self.idxs_lb = idxs_lb
         self.net = net
-        self.handler = handler
+        self.optimizer = optimizer
+        self.lr_schedule = lr_schedule
         self.args = args
-        self.n_pool = len(Y)
+        self.logger = logger
+        self.writer = writer
+        self.loss_func = F.smooth_l1_loss
+        self.n_pool = len(data)
+        self.n_drop = args.n_drop
+
+        # GPU setting
         use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if use_cuda else "cpu")
+        self.net = self.net.to(self.device)
 
     def query(self, n):
         pass
 
     def update(self, idxs_lb):
+        """Update labeled index after query"""
         self.idxs_lb = idxs_lb
 
-    def _train(self, epoch, loader_tr, optimizer):
-        self.clf.train()
-        for batch_idx, (x, y, idxs) in enumerate(loader_tr):
-            x, y = x.to(self.device), y.to(self.device)
-            optimizer.zero_grad()
-            out, e1 = self.clf(x)
-            loss = F.cross_entropy(out, y)
-            loss.backward()
-            optimizer.step()
+    def _train(self,
+               epoch: int,
+               data: Union[MoleculeDataset, List[MoleculeDataset]],
+               n_iter: int) -> int:
+        """
+        Trains a model for an epoch.
+        """
+        debug = self.logger.debug if self.logger is not None else print
 
-    def train(self):
-        n_epoch = self.args['n_epoch']
-        self.clf = self.net().to(self.device)
-        optimizer = optim.SGD(self.clf.parameters(), **self.args['optimizer_args'])
+        debug(f'Running epoch: {epoch}')
+
+        self.net.train()
+
+        data.shuffle()
+        loss_sum, iter_count = 0, 0
+        num_iters = len(data) // self.args.batch_size * self.args.batch_size
+        iter_size = self.args.batch_size
+
+        for i in trange(0, num_iters, iter_size):
+            # Prepare batch
+            if i + self.args.batch_size > len(data):
+                break
+            mol_batch = MoleculeDataset(data[i:i + self.args.batch_size])
+            smiles_batch, features_batch, target_batch = mol_batch.smiles(), mol_batch.features(), mol_batch.targets()
+            batch = smiles_batch
+            mask = torch.Tensor([[x is not None for x in tb] for tb in target_batch])
+            targets = torch.Tensor([[0 if x is None else x for x in tb] for tb in target_batch])
+
+            if next(self.net.parameters()).is_cuda:
+                mask, targets = mask.cuda(), targets.cuda()
+
+            class_weights = torch.ones(targets.shape)
+
+            if self.device == 'cuda':
+                class_weights = class_weights.cuda()
+
+            # Run model
+            self.net.zero_grad()
+            preds, e = self.net(batch, features_batch)
+
+            loss = self.loss_func(preds, targets) * class_weights * mask
+            loss = loss.sum() / mask.sum()
+
+            loss_sum += loss.item()
+            iter_count += len(mol_batch)
+
+            loss.backward()
+            self.optimizer.step()
+
+            if (n_iter // self.args.batch_size) % self.args.learning_rate_decay_steps == 0:
+                self.lr_schedule.step()
+
+            n_iter += len(mol_batch)
+
+            # Log and/or add to tensorboard
+            if (n_iter // self.args.batch_size) % self.args.log_frequency == 0:
+                lrs = self.lr_schedule.get_lr()
+                loss_avg = loss_sum / iter_count
+                loss_sum, iter_count = 0, 0
+
+                lrs_str = ', '.join(f'lr_{i} = {lr:.4e}' for i, lr in enumerate(lrs))
+                debug(f'Loss = {loss_avg:.4e}, {lrs_str}')
+
+                if self.writer is not None:
+                    self.writer.add_scalar('train_loss', loss_avg, n_iter)
+                    for i, lr in enumerate(lrs):
+                        self.writer.add_scalar(f'learning_rate_{i}', lr, n_iter)
+
+        return n_iter
+
+    def train(self, n_iter, n_epoch=None):
+        if n_epoch is None:
+            n_epoch = self.args.epoch
 
         idxs_train = np.arange(self.n_pool)[self.idxs_lb]
-        loader_tr = DataLoader(self.handler(self.X[idxs_train], self.Y[idxs_train], transform=self.args['transform']),
-                            shuffle=True, **self.args['loader_tr_args'])
+        data = MoleculeDataset(self.data[idxs_train])
 
         for epoch in range(1, n_epoch+1):
-            self._train(epoch, loader_tr, optimizer)
+            n_iter = self._train(epoch, data, n_iter)
 
-    def predict(self, X, Y):
-        loader_te = DataLoader(self.handler(X, Y, transform=self.args['transform']),
-                            shuffle=False, **self.args['loader_te_args'])
+        return n_iter
 
-        self.clf.eval()
-        P = torch.zeros(len(Y), dtype=Y.dtype)
-        with torch.no_grad():
-            for x, y, idxs in loader_te:
-                x, y = x.to(self.device), y.to(self.device)
-                out, e1 = self.clf(x)
+    def predict(self, data, scaler=None):
+        self.net.eval()
 
-                pred = out.max(1)[1]
-                P[idxs] = pred.cpu()
+        preds = []
 
-        return P
+        num_iters, iter_step = len(data), self.args.batch_size
 
-    def predict_prob(self, X, Y):
-        loader_te = DataLoader(self.handler(X, Y, transform=self.args['transform']),
-                            shuffle=False, **self.args['loader_te_args'])
+        for i in range(0, num_iters, iter_step):
+            # Prepare batch
+            mol_batch = MoleculeDataset(data[i:i + self.args.batch_size])
+            smiles_batch, features_batch = mol_batch.smiles(), mol_batch.features()
 
-        self.clf.eval()
-        probs = torch.zeros([len(Y), len(np.unique(Y))])
-        with torch.no_grad():
-            for x, y, idxs in loader_te:
-                x, y = x.to(self.device), y.to(self.device)
-                out, e1 = self.clf(x)
-                prob = F.softmax(out, dim=1)
-                probs[idxs] = prob.cpu()
-        
-        return probs
+            # Run model
+            batch = smiles_batch
 
-    def predict_prob_dropout(self, X, Y, n_drop):
-        loader_te = DataLoader(self.handler(X, Y, transform=self.args['transform']),
-                            shuffle=False, **self.args['loader_te_args'])
-
-        self.clf.train()
-        probs = torch.zeros([len(Y), len(np.unique(Y))])
-        for i in range(n_drop):
-            print('n_drop {}/{}'.format(i+1, n_drop))
             with torch.no_grad():
-                for x, y, idxs in loader_te:
-                    x, y = x.to(self.device), y.to(self.device)
-                    out, e1 = self.clf(x)
-                    prob = F.softmax(out, dim=1)
-                    probs[idxs] += prob.cpu()
-        probs /= n_drop
-        
-        return probs
+                batch_preds, e = self.net(batch, features_batch)
 
-    def predict_prob_dropout_split(self, X, Y, n_drop):
-        loader_te = DataLoader(self.handler(X, Y, transform=self.args['transform']),
-                            shuffle=False, **self.args['loader_te_args'])
+            batch_preds = batch_preds.data.cpu().numpy()
 
-        self.clf.train()
-        probs = torch.zeros([n_drop, len(Y), len(np.unique(Y))])
-        for i in range(n_drop):
-            print('n_drop {}/{}'.format(i+1, n_drop))
+            # Inverse scale if regression
+            if scaler is not None:
+                batch_preds = scaler.inverse_transform(batch_preds)
+
+            # Collect vectors
+            batch_preds = batch_preds.tolist()
+            preds.extend(batch_preds)
+
+        return preds
+
+    def evaluate(self, data):
+        preds = np.array(self.predict(data))
+        targets = np.array(data.targets())
+        return compute_mse(preds, targets), compute_mae(preds, targets), compute_maxae(preds, targets)
+
+    # def predict_prob(self, X, Y):
+    #     loader_te = DataLoader(self.handler(X, Y, transform=self.args.transform),
+    #                         shuffle=False, **self.args.loader_te_args)
+    #
+    #     self.net.eval()
+    #     probs = torch.zeros([len(Y), len(np.unique(Y))])
+    #     with torch.no_grad():
+    #         for x, y, idxs in loader_te:
+    #             x, y = x.to(self.device), y.to(self.device)
+    #             out, e1 = self.net(x)
+    #             prob = F.softmax(out, dim=1)
+    #             probs[idxs] = prob.cpu()
+    #
+    #     return probs
+
+    # def predict_prob_dropout(self, X, Y, n_drop):
+    #     loader_te = DataLoader(self.handler(X, Y, transform=self.args.transform),
+    #                         shuffle=False, **self.args.loader_te_args)
+    #
+    #     self.net.train()
+    #     probs = torch.zeros([len(Y), len(np.unique(Y))])
+    #     for i in range(n_drop):
+    #         print('n_drop {}/{}'.format(i+1, n_drop))
+    #         with torch.no_grad():
+    #             for x, y, idxs in loader_te:
+    #                 x, y = x.to(self.device), y.to(self.device)
+    #                 out, e1 = self.net(x)
+    #                 prob = F.softmax(out, dim=1)
+    #                 probs[idxs] += prob.cpu()
+    #     probs /= n_drop
+    #
+    #     return probs
+    #
+    # def predict_prob_dropout_split(self, X, Y, n_drop):
+    #     loader_te = DataLoader(self.handler(X, Y, transform=self.args.transform),
+    #                         shuffle=False, **self.args.loader_te_args)
+    #
+    #     self.net.train()
+    #     probs = torch.zeros([n_drop, len(Y), len(np.unique(Y))])
+    #     for i in range(n_drop):
+    #         print('n_drop {}/{}'.format(i+1, n_drop))
+    #         with torch.no_grad():
+    #             for x, y, idxs in loader_te:
+    #                 x, y = x.to(self.device), y.to(self.device)
+    #                 out, e1 = self.net(x)
+    #                 probs[i][idxs] += F.softmax(out, dim=1).cpu()
+    #
+    #     return probs
+
+    def predict_prob_dropout_split(self, data, scaler=None):
+        self.net.train()
+
+        preds = []
+
+        num_iters, iter_step = len(data), self.args.batch_size
+
+        for i in range(0, num_iters, iter_step):
+            # Prepare batch
+            mol_batch = MoleculeDataset(data[i:i + self.args.batch_size])
+            smiles_batch, features_batch = mol_batch.smiles(), mol_batch.features()
+
+            # Run model
+            batch = smiles_batch
+
+            batch_preds = []
             with torch.no_grad():
-                for x, y, idxs in loader_te:
-                    x, y = x.to(self.device), y.to(self.device)
-                    out, e1 = self.clf(x)
-                    probs[i][idxs] += F.softmax(out, dim=1).cpu()
-        
-        return probs
+                for i in range(self.n_drop):
+                    batch_pred, e = self.net(batch, features_batch)
+                    batch_preds.append(batch_pred.data.cpu().numpy())
 
-    def get_embedding(self, X, Y):
-        loader_te = DataLoader(self.handler(X, Y, transform=self.args['transform']),
-                            shuffle=False, **self.args['loader_te_args'])
+            # Inverse scale if regression
+            if scaler is not None:
+                batch_preds = scaler.inverse_transform(batch_preds)
 
-        self.clf.eval()
-        embedding = torch.zeros([len(Y), self.clf.get_embedding_dim()])
-        with torch.no_grad():
-            for x, y, idxs in loader_te:
-                x, y = x.to(self.device), y.to(self.device)
-                out, e1 = self.clf(x)
-                embedding[idxs] = e1.cpu()
-        
-        return embedding
+            # Collect vectors
+            batch_preds = np.hstack(batch_preds).tolist()
+            preds.extend(batch_preds)
+
+        return np.array(preds)
+
+    def get_embedding(self, data):
+        self.net.eval()
+
+        embedding = []
+
+        num_iters, iter_step = len(data), self.args.batch_size
+
+        for i in range(0, num_iters, iter_step):
+            # Prepare batch
+            mol_batch = MoleculeDataset(data[i:i + self.args.batch_size])
+            smiles_batch, features_batch = mol_batch.smiles(), mol_batch.features()
+
+            # Run model
+            batch = smiles_batch
+
+            with torch.no_grad():
+                preds, latent = self.net(batch, features_batch)
+
+            latent = latent.data.cpu().numpy()
+
+            # Collect vectors
+            latent = latent.tolist()
+            embedding.extend(latent)
+
+        return np.array(embedding)
+
+    def save_net(self, rd, name='model'):
+        if not os.path.exists(self.args.log_path):
+            os.makedirs(self.args.log_path)
+
+        model_name = name + '_checkpoint_' + str(rd) + '.pth'
+        torch.save(self.net.state_dict(), os.path.join(self.args.log_path, model_name))
 

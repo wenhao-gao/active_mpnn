@@ -1,22 +1,18 @@
 import numpy as np
+from datetime import datetime
 from .strategy import Strategy
-from sklearn.neighbors import NearestNeighbors
+
 
 class KCenterGreedy(Strategy):
-	def __init__(self, X, Y, idxs_lb, net, handler, args):
-		super(KCenterGreedy, self).__init__(X, Y, idxs_lb, net, handler, args)
 
 	def query(self, n):
 		lb_flag = self.idxs_lb.copy()
-		embedding = self.get_embedding(self.X, self.Y)
-		embedding = embedding.numpy()
-
-		from datetime import datetime
+		embedding = self.get_embedding(self.data)
 
 		print('calculate distance matrix')
 		t_start = datetime.now()
 		dist_mat = np.matmul(embedding, embedding.transpose())
-		sq = np.array(dist_mat.diagonal()).reshape(len(self.X), 1)
+		sq = np.array(dist_mat.diagonal()).reshape(len(self.data), 1)
 		dist_mat *= -2
 		dist_mat += sq
 		dist_mat += sq.transpose()
@@ -26,7 +22,7 @@ class KCenterGreedy(Strategy):
 		mat = dist_mat[~lb_flag, :][:, lb_flag]
 
 		for i in range(n):
-			if i%10 == 0:
+			if i % 10 == 0:
 				print('greedy solution {}/{}'.format(i, n))
 			mat_min = mat.min(axis=1)
 			q_idx_ = mat_min.argmax()

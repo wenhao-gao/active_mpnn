@@ -1,57 +1,68 @@
+import os
 import numpy as np
-from dataset import get_dataset, get_handler
-from model import get_net
-from torchvision import transforms
+from dataset.dataset import get_dataset, get_handler
+from model.nn_utils import initialize_weights
+from model.get_models import get_net
+from oracle.get_oracles import get_oracle
 import torch
+import torch.optim as optim
 from query_strategies import RandomSampling, LeastConfidence, MarginSampling, EntropySampling, \
                                 LeastConfidenceDropout, MarginSamplingDropout, EntropySamplingDropout, \
                                 KMeansSampling, KCenterGreedy, BALDDropout, CoreSet, \
                                 AdversarialBIM, AdversarialDeepFool, ActiveLearningByLearning
 
 # parameters
-SEED = 1
+NUM_INIT_LB = 1000
+DATA_NAME = 'regression'
 
-NUM_INIT_LB = 10000
-NUM_QUERY = 1000
-NUM_ROUND = 10
 
-DATA_NAME = 'MNIST'
-# DATA_NAME = 'FashionMNIST'
-# DATA_NAME = 'SVHN'
-# DATA_NAME = 'CIFAR10'
+class N:
+    def __init__(self):
+        self.task = 'test'
+        self.seed = 1
+        self.round = 3
+        self.query = 128
+        self.log_path = 'checkpoints/'
+        self.init_data = 'data/sheridan_train.csv'
+        self.test_data = 'data/sheridan_test.csv'
+        self.pool_data = 'data/chembl250k.csv'
+        self.mol_col = 'SMILES'
+        self.mol_prop = 'sa_score'
+        self.network = 'mpnn'
+        self.param = None
+        self.num_bootstrap_heads = 1
+        self.hidden_size = 300
+        self.bias = False
+        self.depth = 3
+        self.ffn_hidden_size = 300
+        self.ffn_num_layers = 2
+        self.atom_messages = False
+        self.feature_only = False
+        self.use_input_features = True
+        self.features_dim = 1
+        self.dropout = 0.5
+        self.activation = 'ReLU'
+        self.strategy = 'random'
+        self.oracle = 'test'
+        self.learning_rate = 0.01
+        self.adam_beta_1 = 0.9
+        self.adam_beta_2 = 0.999
+        self.epoch = 10
+        # self.transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+        self.transform = None
+        self.loader_tr_args = {'batch_size': 64, 'num_workers': 1}
+        self.loader_te_args = {'batch_size': 1000, 'num_workers': 1}
 
-args_pool = {'MNIST':
-                {'n_epoch': 10, 'transform': transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-                 'loader_tr_args':{'batch_size': 64, 'num_workers': 1},
-                 'loader_te_args':{'batch_size': 1000, 'num_workers': 1},
-                 'optimizer_args':{'lr': 0.01, 'momentum': 0.5}},
-            'FashionMNIST':
-                {'n_epoch': 10, 'transform': transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]),
-                 'loader_tr_args':{'batch_size': 64, 'num_workers': 1},
-                 'loader_te_args':{'batch_size': 1000, 'num_workers': 1},
-                 'optimizer_args':{'lr': 0.01, 'momentum': 0.5}},
-            'SVHN':
-                {'n_epoch': 20, 'transform': transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4377, 0.4438, 0.4728), (0.1980, 0.2010, 0.1970))]),
-                 'loader_tr_args':{'batch_size': 64, 'num_workers': 1},
-                 'loader_te_args':{'batch_size': 1000, 'num_workers': 1},
-                 'optimizer_args':{'lr': 0.01, 'momentum': 0.5}},
-            'CIFAR10':
-                {'n_epoch': 20, 'transform': transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))]),
-                 'loader_tr_args':{'batch_size': 64, 'num_workers': 1},
-                 'loader_te_args':{'batch_size': 1000, 'num_workers': 1},
-                 'optimizer_args':{'lr': 0.05, 'momentum': 0.3}}
-            }
-args = args_pool[DATA_NAME]
 
-# set seed
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.backends.cudnn.enabled = False
+def mse(y1, y2):
+    return np.mean(np.square(y1 - y2))
 
-# load dataset
+
+args = N()
+
 X_tr, Y_tr, X_te, Y_te = get_dataset(DATA_NAME)
-X_tr = X_tr[:40000]
-Y_tr = Y_tr[:40000]
+X_tr = X_tr[:10000]
+Y_tr = Y_tr[:10000]
 
 # start experiment
 n_pool = len(Y_tr)
@@ -66,56 +77,50 @@ idxs_tmp = np.arange(n_pool)
 np.random.shuffle(idxs_tmp)
 idxs_lb[idxs_tmp[:NUM_INIT_LB]] = True
 
-# load network
 net = get_net(DATA_NAME)
+net = net()
+initialize_weights(net)
+if args.param is not None:
+    net.load_state_dict(torch.load(args.param))
 handler = get_handler(DATA_NAME)
+optimizer = optim.SGD(net.parameters(),
+                      lr = args.learning_rate,
+                      momentum = 0.5
+                     )
+oracle = get_oracle(args)
+strategy = RandomSampling(X_tr, Y_tr, idxs_lb, net, handler, optimizer, args)
 
-# strategy = RandomSampling(X_tr, Y_tr, idxs_lb, net, handler, args)
-# strategy = LeastConfidence(X_tr, Y_tr, idxs_lb, net, handler, args)
-# strategy = MarginSampling(X_tr, Y_tr, idxs_lb, net, handler, args)
-# strategy = EntropySampling(X_tr, Y_tr, idxs_lb, net, handler, args)
-# strategy = LeastConfidenceDropout(X_tr, Y_tr, idxs_lb, net, handler, args, n_drop=10)
-# strategy = MarginSamplingDropout(X_tr, Y_tr, idxs_lb, net, handler, args, n_drop=10)
-# strategy = EntropySamplingDropout(X_tr, Y_tr, idxs_lb, net, handler, args, n_drop=10)
-# strategy = KMeansSampling(X_tr, Y_tr, idxs_lb, net, handler, args)
-# strategy = KCenterGreedy(X_tr, Y_tr, idxs_lb, net, handler, args)
-# strategy = BALDDropout(X_tr, Y_tr, idxs_lb, net, handler, args, n_drop=10)
-strategy = CoreSet(X_tr, Y_tr, idxs_lb, net, handler, args)
-# strategy = AdversarialBIM(X_tr, Y_tr, idxs_lb, net, handler, args, eps=0.05)
-# strategy = AdversarialDeepFool(X_tr, Y_tr, idxs_lb, net, handler, args, max_iter=50)
-# albl_list = [MarginSampling(X_tr, Y_tr, idxs_lb, net, handler, args),
-#              KMeansSampling(X_tr, Y_tr, idxs_lb, net, handler, args)]
-# strategy = ActiveLearningByLearning(X_tr, Y_tr, idxs_lb, net, handler, args, strategy_list=albl_list, delta=0.1)
-
-# print info
 print(DATA_NAME)
-print('SEED {}'.format(SEED))
+print('SEED {}'.format(args.seed))
 print(type(strategy).__name__)
+losses = []
 
-# round 0 accuracy
 strategy.train()
-P = strategy.predict(X_te, Y_te)
-acc = np.zeros(NUM_ROUND+1)
-acc[0] = 1.0 * (Y_te==P).sum().item() / len(Y_te)
-print('Round 0\ntesting accuracy {}'.format(acc[0]))
+pred = strategy.predict(X_te, Y_te)
+loss = mse(pred.cpu().numpy(), Y_te.cpu().numpy())
+losses.append(loss)
+print('Round 0\ntesting MSE {}'.format(loss))
 
-for rd in range(1, NUM_ROUND+1):
+for rd in range(1, args.round + 1):
     print('Round {}'.format(rd))
 
     # query
-    q_idxs = strategy.query(NUM_QUERY)
-    idxs_lb[q_idxs] = True
+    q_idxs = strategy.query(args.query)
+    oracle(X_tr, Y_tr, idxs_lb, q_idxs)
 
     # update
     strategy.update(idxs_lb)
     strategy.train()
 
     # round accuracy
-    P = strategy.predict(X_te, Y_te)
-    acc[rd] = 1.0 * (Y_te==P).sum().item() / len(Y_te)
-    print('testing accuracy {}'.format(acc[rd]))
+    pred = strategy.predict(X_te, Y_te)
+    loss = mse(pred.cpu().numpy(), Y_te.cpu().numpy())
+    losses.append(loss)
+    print('Round {}\ntesting MSE {}'.format(rd, loss))
+
+    strategy.save_net(rd)
 
 # print results
-print('SEED {}'.format(SEED))
+print('SEED {}'.format(args.seed))
 print(type(strategy).__name__)
-print(acc)
+print(losses)
