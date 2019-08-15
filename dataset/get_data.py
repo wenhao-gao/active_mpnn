@@ -14,6 +14,9 @@ def get_dataset(args: Namespace = None):
     """
     assert args is not None
 
+    if isinstance(args.max_data_size, str):
+        args.max_data_size = int(args.max_data_size)
+
     df_init = pd.read_csv(args.init_data)
     df_test = pd.read_csv(args.test_data)
     df_pool = pd.read_csv(args.pool_data)
