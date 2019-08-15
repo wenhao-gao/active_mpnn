@@ -43,7 +43,9 @@ def train_model(
     info('number of testing pool: {}'.format(n_test))
 
     net = get_net(args)
-    net = net(args)
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda" if use_cuda else "cpu")
+    net = net(args, device)
     initialize_weights(net)
     if args.parameters is not None:
         net.load_state_dict(torch.load(args.param))
@@ -138,12 +140,15 @@ def set_logger(logger: logging.Logger, save_dir: str = None, quiet: bool = False
 
 if __name__ == '__main__':
     args = parse_args()
+
     logger = logging.getLogger('train')
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
     set_logger(logger, args.log_path, args.quiet)
+
     try:
         writer = SummaryWriter(log_dir=args.log_path)
     except:
         writer = SummaryWriter(logdir=args.log_path)
+
     train_model(args, logger, writer)
