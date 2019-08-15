@@ -85,13 +85,13 @@ class MPNEncoder(nn.Module):
         if self.atom_messages:
             a2a = mol_graph.get_a2a()
 
-        f_atoms.to(self.device)
-        f_bonds.to(self.device)
-        a2b.to(self.device)
-        b2a.to(self.device)
-        b2revb.to(self.device)
+        f_atoms = f_atoms.to(self.device)
+        f_bonds = f_bonds.to(self.device)
+        a2b = a2b.to(self.device)
+        b2a = b2a.to(self.device)
+        b2revb = b2revb.to(self.device)
         if self.atom_messages:
-            a2a.to(self.device)
+            a2a = a2a.to(self.device)
 
         # Input
         if self.atom_messages:
