@@ -2,6 +2,7 @@
 
 source activate rdkit
 VISIBLE_CUDA_DEVICES=7 python -u train.py \
+        --task test_random \
         --init_data data/sheridan_train.csv \
         --test_data data/sheridan_test.csv \
         --pool_data data/chembl250k.csv \
