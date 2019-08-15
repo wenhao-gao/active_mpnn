@@ -111,7 +111,7 @@ class Strategy:
 
             class_weights = torch.ones(targets.shape)
 
-            if self.device == 'cuda':
+            if self.device != 'cpu':
                 class_weights = class_weights.cuda()
 
             # Run model
