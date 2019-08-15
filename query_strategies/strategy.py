@@ -1,3 +1,6 @@
+"""
+Define a basic active learning query strategy
+"""
 import os
 import numpy as np
 import torch.nn.functional as F

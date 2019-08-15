@@ -1,5 +1,5 @@
 """
-Code handle the arguments
+Define all the arguments
 """
 from argparse import ArgumentParser, Namespace
 import json
@@ -51,9 +51,9 @@ def add_args(parser: ArgumentParser):
     parser.add_argument('--oracle', default='sa',
                         choices=['sa', 'sc', 'tb', 'smiles', 'test'],
                         help='Name a oracle to learn from')
-    parser.add_argument('--max_data_size', default=2000,
+    parser.add_argument('--max_data_size', default=99999999999,
                         help='The number of samples to query every time.')
-    parser.add_argument('--epoch', default=2,
+    parser.add_argument('--epoch', default=50,
                         help='The number of epoches to train.')
 
     # Network arguments
@@ -70,9 +70,9 @@ def add_args(parser: ArgumentParser):
     parser.add_argument('--dropout', default=0.5,
                         help='The dropout probability.')
     parser.add_argument('--n_drop', default=25,
-                        help='The dropout probability.')
+                        help='The number of dropout runs when using dropout based strategy.')
     parser.add_argument('--message_dropout', default=0,
-                        help='The dropout probability.')
+                        help='The dropout probability in message passing stage.')
     parser.add_argument('--adam_beta_1', default=0.9,
                         help='The beta_1 in adam optimizer.')
     parser.add_argument('--adam_beta_2', default=0.999,
@@ -83,18 +83,18 @@ def add_args(parser: ArgumentParser):
                         help='The learning rate to begin with.')
     parser.add_argument('--learning_rate_decay_steps', default=10000,
                         help='Learning rate decay steps.')
-    parser.add_argument('--learning_rate_decay_rate', default=0.8,
+    parser.add_argument('--learning_rate_decay_rate', default=0.9,
                         help='Learning rate decay rate.')
     parser.add_argument('--features_generator', default=['morgan'],
-                        help='Path to feature files')
+                        help='Additional features')
     parser.add_argument('--features_path', default=None,
                         help='Path to feature files')
     parser.add_argument('--use_compound_names', action='store_true', default=False,
                         help='Whether to see the intermediate information.')
     parser.add_argument('--batch_size', default=200,
-                        help='The number of samples to query every time.')
+                        help='Learning batch size')
     parser.add_argument('--log_frequency', default=1,
-                        help='The number of samples to query every time.')
+                        help='The frequency to log the result.')
     parser.add_argument('--hidden_size', default=300,
                         help='The hidden vector size.')
     parser.add_argument('--bias', action='store_true', default=False,

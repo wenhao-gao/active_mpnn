@@ -1,3 +1,7 @@
+"""
+Code to define the data set passed to directed message passing network
+Slightly modified from https://github.com/swansonk14/chemprop
+"""
 from argparse import Namespace
 import random
 from typing import Callable, List, Union

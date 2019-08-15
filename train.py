@@ -1,3 +1,6 @@
+"""
+The active learning training process
+"""
 from argparse import Namespace
 
 import os
@@ -32,8 +35,14 @@ def train_model(
         debug = info = print
 
     # set seed
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
+    use_cuda = torch.cuda.is_available()
+    if args.seed is not None:
+        np.random.seed(args.seed)
+        if not use_cuda:
+            torch.manual_seed(args.seed)
+    else:
+        np.random.seed()
+
     torch.backends.cudnn.enabled = False
 
     # Construct data set
@@ -44,7 +53,6 @@ def train_model(
 
     # Define parts we need
     net = get_net(args)
-    use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
     net = net(args, device)
     initialize_weights(net)
@@ -86,6 +94,9 @@ def train_model(
 
     # Starting querying and training
     for rd in range(1, args.round + 1):
+
+        assert sum(idxs_lb) < len(data_train)
+
         info('Round {}'.format(rd))
 
         # query
