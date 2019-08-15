@@ -51,7 +51,7 @@ def add_args(parser: ArgumentParser):
     parser.add_argument('--oracle', default='sa',
                         choices=['sa', 'sc', 'tb', 'smiles', 'test'],
                         help='Name a oracle to learn from')
-    parser.add_argument('--max_data_size', default=999999999,
+    parser.add_argument('--max_data_size', default=100000,
                         help='The number of samples to query every time.')
 
     # Network arguments

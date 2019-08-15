@@ -20,8 +20,7 @@ class MPNEncoder(nn.Module):
     def __init__(self,
                  args: Namespace,
                  atom_fdim: int,
-                 bond_fdim: int,
-                 device: str = 'cpu'):
+                 bond_fdim: int):
         """Initializes the MPNEncoder.
 
         :param args: Arguments.
@@ -39,7 +38,8 @@ class MPNEncoder(nn.Module):
         self.atom_messages = args.atom_messages
         self.use_input_features = args.use_input_features
         self.args = args
-        self.device = device
+        use_cuda = torch.cuda.is_available()
+        self.device = torch.device("cuda" if use_cuda else "cpu")
 
         # Dropout
         self.dropout_layer = nn.Dropout(p=self.dropout)

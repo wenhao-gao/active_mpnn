@@ -47,10 +47,18 @@ def train_model(
     initialize_weights(net)
     if args.parameters is not None:
         net.load_state_dict(torch.load(args.param))
-    optimizer = optim.SGD(net.parameters(),
-                          lr=args.learning_rate,
-                          momentum=0.5
-                          )
+    # optimizer = optim.SGD(net.parameters(),
+    #                       lr=args.learning_rate,
+    #                       momentum=0.5
+    #                       )
+    optimizer = optim.Adam(
+            params=net.parameters(),
+            lr=args.learning_rate,
+            betas=(args.adam_beta_1, args.adam_beta_2),
+            eps=1e-08,
+            weight_decay=0,
+            amsgrad=False
+        )
     lr_schedule = optim.lr_scheduler.ExponentialLR(
         optimizer=optimizer,
         gamma=args.learning_rate_decay_rate
