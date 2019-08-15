@@ -1,11 +1,9 @@
 import os
 import numpy as np
-from tqdm import tqdm
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from argparse import Namespace
 import logging
-from typing import Callable, List, Union
+from typing import List, Union
 
 from tensorboardX import SummaryWriter
 import torch
@@ -67,8 +65,8 @@ class Strategy:
         self.n_drop = args.n_drop
 
         # GPU setting
-        use_cuda = torch.cuda.is_available()
-        self.device = torch.device("cuda" if use_cuda else "cpu")
+        self.use_cuda = torch.cuda.is_available()
+        self.device = torch.device("cuda" if self.use_cuda else "cpu")
         self.net = self.net.to(self.device)
 
     def query(self, n):
@@ -111,7 +109,7 @@ class Strategy:
 
             class_weights = torch.ones(targets.shape)
 
-            if self.device != 'cpu':
+            if self.use_cuda:
                 class_weights = class_weights.cuda()
 
             # Run model
@@ -143,8 +141,8 @@ class Strategy:
 
                 if self.writer is not None:
                     self.writer.add_scalar('train_loss', loss_avg, n_iter)
-                    for i, lr in enumerate(lrs):
-                        self.writer.add_scalar(f'learning_rate_{i}', lr, n_iter)
+                    # for i, lr in enumerate(lrs):
+                    #     self.writer.add_scalar(f'learning_rate_{i}', lr, n_iter)
 
         return n_iter
 
@@ -194,55 +192,6 @@ class Strategy:
         preds = np.array(self.predict(data))
         targets = np.array(data.targets())
         return compute_mse(preds, targets), compute_mae(preds, targets), compute_maxae(preds, targets)
-
-    # def predict_prob(self, X, Y):
-    #     loader_te = DataLoader(self.handler(X, Y, transform=self.args.transform),
-    #                         shuffle=False, **self.args.loader_te_args)
-    #
-    #     self.net.eval()
-    #     probs = torch.zeros([len(Y), len(np.unique(Y))])
-    #     with torch.no_grad():
-    #         for x, y, idxs in loader_te:
-    #             x, y = x.to(self.device), y.to(self.device)
-    #             out, e1 = self.net(x)
-    #             prob = F.softmax(out, dim=1)
-    #             probs[idxs] = prob.cpu()
-    #
-    #     return probs
-
-    # def predict_prob_dropout(self, X, Y, n_drop):
-    #     loader_te = DataLoader(self.handler(X, Y, transform=self.args.transform),
-    #                         shuffle=False, **self.args.loader_te_args)
-    #
-    #     self.net.train()
-    #     probs = torch.zeros([len(Y), len(np.unique(Y))])
-    #     for i in range(n_drop):
-    #         print('n_drop {}/{}'.format(i+1, n_drop))
-    #         with torch.no_grad():
-    #             for x, y, idxs in loader_te:
-    #                 x, y = x.to(self.device), y.to(self.device)
-    #                 out, e1 = self.net(x)
-    #                 prob = F.softmax(out, dim=1)
-    #                 probs[idxs] += prob.cpu()
-    #     probs /= n_drop
-    #
-    #     return probs
-    #
-    # def predict_prob_dropout_split(self, X, Y, n_drop):
-    #     loader_te = DataLoader(self.handler(X, Y, transform=self.args.transform),
-    #                         shuffle=False, **self.args.loader_te_args)
-    #
-    #     self.net.train()
-    #     probs = torch.zeros([n_drop, len(Y), len(np.unique(Y))])
-    #     for i in range(n_drop):
-    #         print('n_drop {}/{}'.format(i+1, n_drop))
-    #         with torch.no_grad():
-    #             for x, y, idxs in loader_te:
-    #                 x, y = x.to(self.device), y.to(self.device)
-    #                 out, e1 = self.net(x)
-    #                 probs[i][idxs] += F.softmax(out, dim=1).cpu()
-    #
-    #     return probs
 
     def predict_prob_dropout_split(self, data, scaler=None):
         self.net.train()

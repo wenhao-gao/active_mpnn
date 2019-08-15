@@ -42,6 +42,7 @@ def train_model(
     info('number of unlabeled pool: {}'.format(len(data_train) - sum(idxs_lb)))
     info('number of testing pool: {}'.format(n_test))
 
+    # Define parts we need
     net = get_net(args)
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
@@ -49,10 +50,6 @@ def train_model(
     initialize_weights(net)
     if args.parameters is not None:
         net.load_state_dict(torch.load(args.param))
-    # optimizer = optim.SGD(net.parameters(),
-    #                       lr=args.learning_rate,
-    #                       momentum=0.5
-    #                       )
     optimizer = optim.Adam(
             params=net.parameters(),
             lr=args.learning_rate,
@@ -69,11 +66,14 @@ def train_model(
     strategy = get_strategy(args)
     strategy = strategy(data_train, idxs_lb, net, optimizer, lr_schedule, args, logger, writer)
 
+    # Logging information of this task
+    info(f'Starting running task: {args.task}')
     info('SEED {}'.format(args.seed))
     info(type(strategy).__name__)
     losses = []
     n_iter = 0
 
+    # The first round training
     n_iter = strategy.train(n_iter)
     mse, mae, maxae = strategy.evaluate(data_test)
     losses.append(mae)
@@ -84,6 +84,7 @@ def train_model(
         writer.add_scalar('query_mae', mae, 0)
         writer.add_scalar('query_maxae', maxae, 0)
 
+    # Starting querying and training
     for rd in range(1, args.round + 1):
         info('Round {}'.format(rd))
 

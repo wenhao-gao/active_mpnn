@@ -41,18 +41,20 @@ def add_args(parser: ArgumentParser):
     # active learning strategy
     parser.add_argument('--seed', default=123,
                         help='The random seed to be used.')
-    parser.add_argument('--round', default=20,
+    parser.add_argument('--round', default=50,
                         help='The number of rounds to make a query.')
-    parser.add_argument('--query', default=128,
+    parser.add_argument('--query', default=1000,
                         help='The number of samples to query every time.')
-    parser.add_argument('--strategy', default='maxmin',
+    parser.add_argument('--strategy', default='random',
                         choices=['random', 'maxmin', 'kcenter', 'variance', 'kmean'],
                         help='Name a query strategy')
     parser.add_argument('--oracle', default='sa',
                         choices=['sa', 'sc', 'tb', 'smiles', 'test'],
                         help='Name a oracle to learn from')
-    parser.add_argument('--max_data_size', default=100000,
+    parser.add_argument('--max_data_size', default=2000,
                         help='The number of samples to query every time.')
+    parser.add_argument('--epoch', default=2,
+                        help='The number of epoches to train.')
 
     # Network arguments
     parser.add_argument('--network', default='mpnn',
@@ -77,36 +79,22 @@ def add_args(parser: ArgumentParser):
                         help='The beta_2 in adam optimizer.')
     parser.add_argument('--grad_clipping', default=10,
                         help='The gradient clipping.')
-    parser.add_argument('--learning_rate', default=1e-4,
+    parser.add_argument('--learning_rate', default=1e-3,
                         help='The learning rate to begin with.')
     parser.add_argument('--learning_rate_decay_steps', default=10000,
                         help='Learning rate decay steps.')
     parser.add_argument('--learning_rate_decay_rate', default=0.8,
                         help='Learning rate decay rate.')
-    parser.add_argument('--epoch', default=2,
-                        help='The number of epoches to train.')
-    parser.add_argument('--transform', default=None,
-                        help='The number of samples to query every time.')
-    parser.add_argument('--loader_tr_args', default={'batch_size': 64, 'num_workers': 1},
-                        help='The number of samples to query every time.')
-    parser.add_argument('--loader_te_args', default={'batch_size': 1000, 'num_workers': 1},
-                        help='The number of samples to query every time.')
     parser.add_argument('--features_generator', default=['morgan'],
                         help='Path to feature files')
     parser.add_argument('--features_path', default=None,
                         help='Path to feature files')
     parser.add_argument('--use_compound_names', action='store_true', default=False,
                         help='Whether to see the intermediate information.')
-    parser.add_argument('--batch_size', default=128,
+    parser.add_argument('--batch_size', default=200,
                         help='The number of samples to query every time.')
     parser.add_argument('--log_frequency', default=1,
                         help='The number of samples to query every time.')
-    parser.add_argument('--fingerprint_radius', default=3,
-                        help='The Morgan fingerprint radius.')
-    parser.add_argument('--fingerprint_length', default=2048,
-                        help='The Morgan fingerprint length.')
-    parser.add_argument('--dense_layers', default=[1024, 512, 128, 32],
-                        help='The dense layers of ffn.')
     parser.add_argument('--hidden_size', default=300,
                         help='The hidden vector size.')
     parser.add_argument('--bias', action='store_true', default=False,
