@@ -1,0 +1,7 @@
+{
+  "strategy": "random",
+  "max_data_size":  10000,
+  "round": 9,
+  "query": 1000,
+  "epoch": 2
+}

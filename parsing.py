@@ -91,7 +91,7 @@ def add_args(parser: ArgumentParser):
                         help='Path to feature files')
     parser.add_argument('--use_compound_names', action='store_true', default=False,
                         help='Whether to see the intermediate information.')
-    parser.add_argument('--batch_size', default=200,
+    parser.add_argument('--batch_size', default=128,
                         help='Learning batch size')
     parser.add_argument('--log_frequency', default=1,
                         help='The frequency to log the result.')
