@@ -55,6 +55,8 @@ def add_args(parser: ArgumentParser):
                         help='The number of samples to query every time.')
     parser.add_argument('--epoch', default=50,
                         help='The number of epoches to train.')
+    parser.add_argument('--data_pool', default=None,
+                        help='Number of data to sample from.')
 
     # Network arguments
     parser.add_argument('--network', default='mpnn',
