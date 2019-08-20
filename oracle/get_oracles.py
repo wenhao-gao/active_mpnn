@@ -10,7 +10,7 @@ import rdkit.Chem as Chem
 def get_oracle(args):
     name = args.oracle
     if name == 'tb':
-        return tb_score
+        return label_tb_score
     elif name == 'sa':
         return label_sa_score
     # elif name == 'sc':
@@ -33,8 +33,18 @@ def label_sa_score(data, idxs_lb, q_idxs):
     return data, idxs_lb
 
 
-def tb_score(smi):
-    pass
+def label_tb_score(data, idxs_lb, q_idxs):
+    """
+    Label the data with query index
+    :param data: training data pool
+    :param idxs_lb: labeled index
+    :param q_idxs: query index
+    :return: labeled dataset, new labeled index
+    """
+    idxs_lb[q_idxs] = True
+    for i in range(len(q_idxs)):
+        data[q_idxs][i].targets = get_synthesizability(data[q_idxs][i].smiles)
+    return data, idxs_lb
 
 
 def get_buyability(molecule):
@@ -43,24 +53,25 @@ def get_buyability(molecule):
     :param molecule: inquiry molecule in format of SMILES
     :return:
     """
-    path_to_buyable_data = 'data/pricer_using_reaxys_v2-chemicals_and_reaxys_v2-buyables.pkl'
-    with open(path_to_buyable_data, 'rb') as f:
-        buyable_molecules = pickle.load(f)
-
+    params = {
+        'smiles': molecule
+    }
+    HOST = 'https://34.67.151.173'
+    resp = requests.get(HOST + '/api/price/', params=params, verify=False)
     try:
-        return buyable_molecules[molecule]
+        return resp.json()['price']
     except:
         return 0
 
 
 def _gaussian_wrapper(x, mu, sigma):
-    if x < 3:
+    if x < mu:
         return 1
     else:
         return np.exp(- (x - mu) ** 2 / (2 * sigma ** 2))
 
 
-def gaussian_wrapper(x, mu=3, sigma=1):
+def gaussian_wrapper(x, mu=3, sigma=2.5):
     if isinstance(x, float):
         x = [x]
 
@@ -75,16 +86,15 @@ def sa_score(smi):
 
 def get_synthesizability(molecule):
     # Check if the molecule is buyable first
-    buyable = get_buyability(molecule)
-    if buyable:
+    if get_buyability(molecule):
         return 1.0
     else:
         # If not buyable, then call the tree builder oracle
-        HOST = 'http://askcos3.mit.edu'
+        HOST = 'https://34.67.151.173'
         params = {
             'smiles': molecule,  # required
             # optional with defaults shown
-            'max_depth': 5,
+            'max_depth': 8,
             'max_branching': 25,
             'expansion_time': 60,
             'max_ppg': 100,
@@ -105,13 +115,19 @@ def get_synthesizability(molecule):
 
         for _ in range(15):
             resp = requests.get(HOST + '/api/treebuilder/', params=params)
+
+            if resp.content == b'<h1>Server Error (500)</h1>':
+                break
+
             if 'error' not in resp.json().keys():
                 break
 
-        if 'error' not in resp.json().keys() or len(resp.json()['trees']) == 0:
+        if resp.content == b'<h1>Server Error (500)</h1>':
+            return 0
+        elif 'error' not in resp.json().keys() or len(resp.json()['trees']) == 0:
             # No retrosynthetic pathway is found
             sa_score = sascorer.calculateScore(Chem.MolFromSmiles(molecule))
-            return gaussian_wrapper(sa_score)
+            return 0.65 * gaussian_wrapper(sa_score)
         else:
             # Retrosynthetic pathway is found
             return synthesizability_wrapper(resp.json())
@@ -119,7 +135,11 @@ def get_synthesizability(molecule):
 
 def synthesizability_wrapper(json):
     num_path, status, depth, p_score, synthesizability, d_p = tree_analysis(json)
-    return d_p
+    if synthesizability == 1:
+        if depth == 0.5:
+            return 1
+        else:
+            return 1 - 0.08 * (depth - 1)
 
 
 def tree_analysis(current):
