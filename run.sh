@@ -9,4 +9,4 @@ VISIBLE_CUDA_DEVICES=7 python -u train.py \
         --path_to_config config/random.json \
         --mol_col SMILES \
         --mol_prop sa_score \
-        --oracle sa &> temp.out&
+        --oracle tb &> temp.out&

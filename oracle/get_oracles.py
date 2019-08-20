@@ -7,6 +7,9 @@ import rdkit.Chem as Chem
 # from scscore.standalone_model_numpy import SCScorer
 
 
+HOST = 'https://34.66.89.38'
+
+
 def get_oracle(args):
     name = args.oracle
     if name == 'tb':
@@ -56,7 +59,6 @@ def get_buyability(molecule):
     params = {
         'smiles': molecule
     }
-    HOST = 'https://34.67.151.173'
     resp = requests.get(HOST + '/api/price/', params=params, verify=False)
     try:
         return resp.json()['price']
@@ -90,7 +92,6 @@ def get_synthesizability(molecule):
         return 1.0
     else:
         # If not buyable, then call the tree builder oracle
-        HOST = 'https://34.67.151.173'
         params = {
             'smiles': molecule,  # required
             # optional with defaults shown
@@ -114,7 +115,7 @@ def get_synthesizability(molecule):
         }
 
         for _ in range(15):
-            resp = requests.get(HOST + '/api/treebuilder/', params=params)
+            resp = requests.get(HOST + '/api/treebuilder/', params=params, verify=False)
 
             if resp.content == b'<h1>Server Error (500)</h1>':
                 break
@@ -127,7 +128,9 @@ def get_synthesizability(molecule):
         elif 'error' not in resp.json().keys() or len(resp.json()['trees']) == 0:
             # No retrosynthetic pathway is found
             sa_score = sascorer.calculateScore(Chem.MolFromSmiles(molecule))
-            return 0.65 * gaussian_wrapper(sa_score)
+            raw_score = np.array(gaussian_wrapper(sa_score))
+            temp = 0.65 * raw_score
+            return temp.tolist()
         else:
             # Retrosynthetic pathway is found
             return synthesizability_wrapper(resp.json())
