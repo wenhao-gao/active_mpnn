@@ -46,7 +46,7 @@ def label_tb_score(data, idxs_lb, q_idxs):
     """
     idxs_lb[q_idxs] = True
     for i in range(len(q_idxs)):
-        data[q_idxs][i].targets = get_synthesizability(data[q_idxs][i].smiles)
+        data[q_idxs][i].targets = to_list(get_synthesizability(data[q_idxs][i].smiles))
     return data, idxs_lb
 
 
@@ -123,17 +123,40 @@ def get_synthesizability(molecule):
             if 'error' not in resp.json().keys():
                 break
 
-        if resp.content == b'<h1>Server Error (500)</h1>':
+        try:
+
+            if resp.content == b'<h1>Server Error (500)</h1>':
+                return 0
+            elif 'error' in resp.json().keys():
+                # No retrosynthetic pathway is found
+                print(f'####Returning error')
+                sa_score = sascorer.calculateScore(Chem.MolFromSmiles(molecule))
+                raw_score = np.array(gaussian_wrapper(sa_score))
+                temp = 0.65 * raw_score
+                return temp.tolist()
+            elif len(resp.json()['trees']) == 0:
+                # No retrosynthetic pathway is found
+                print(f'####Normal! But no routes found!')
+                sa_score = sascorer.calculateScore(Chem.MolFromSmiles(molecule))
+                raw_score = np.array(gaussian_wrapper(sa_score))
+                temp = 0.65 * raw_score
+                return temp.tolist()
+            else:
+                # Retrosynthetic pathway is found
+                print(f"####Normal! Found {len(resp.json()['trees'])} paths.")
+                return synthesizability_wrapper(resp.json())
+
+        except:
+
+            print(f'####returning 0')
             return 0
-        elif 'error' not in resp.json().keys() or len(resp.json()['trees']) == 0:
-            # No retrosynthetic pathway is found
-            sa_score = sascorer.calculateScore(Chem.MolFromSmiles(molecule))
-            raw_score = np.array(gaussian_wrapper(sa_score))
-            temp = 0.65 * raw_score
-            return temp.tolist()
-        else:
-            # Retrosynthetic pathway is found
-            return synthesizability_wrapper(resp.json())
+
+
+def to_list(x):
+    if isinstance(x, list):
+        return x
+    else:
+        return [x]
 
 
 def synthesizability_wrapper(json):

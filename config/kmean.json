@@ -1,6 +1,7 @@
 {
   "strategy": "kmean",
+  "data_pool": 10000,
   "round": 50,
-  "query": 1000,
+  "query": 200,
   "epoch": 50
 }
