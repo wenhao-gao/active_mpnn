@@ -1,5 +1,7 @@
 #!/bin/bash
 
+
+
 source activate rdkit
 VISIBLE_CUDA_DEVICES=7 python -u train.py \
         --task test_kmean \
